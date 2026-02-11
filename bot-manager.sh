@@ -1,7 +1,15 @@
 #!/bin/bash
 
 # Определяем директорию проекта автоматически
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Используем readlink для получения реального пути даже при вызове через симлинк
+if [ -L "$0" ]; then
+    # Если вызван через симлинк, получаем реальный путь
+    REAL_SCRIPT=$(readlink -f "$0")
+    SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+else
+    # Если вызван напрямую
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 PROJECT_DIR="$SCRIPT_DIR"
 SERVICE_NAME="reposter-bot"
 

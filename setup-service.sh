@@ -101,6 +101,8 @@ sudo systemctl start reposter-bot
 # Установка команд управления ботом
 echo "Установка команд управления..."
 BOT_MANAGER="$PROJECT_DIR/bot-manager.sh"
+BOT_SETUP="$PROJECT_DIR/bot-setup.sh"
+
 if [ -f "$BOT_MANAGER" ]; then
     chmod +x "$BOT_MANAGER"
     
@@ -114,6 +116,13 @@ if [ -f "$BOT_MANAGER" ]; then
     echo "✓ Команды управления установлены"
 else
     echo "⚠ Предупреждение: bot-manager.sh не найден"
+fi
+
+# Установка команды bot-setup для запуска из любой директории
+if [ -f "$BOT_SETUP" ]; then
+    chmod +x "$BOT_SETUP"
+    sudo ln -sf "$BOT_SETUP" /usr/local/bin/bot-setup
+    echo "✓ Команда bot-setup установлена"
 fi
 
 echo ""

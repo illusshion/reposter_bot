@@ -15,11 +15,12 @@ from database import Database
 from services.forwarder import ForwarderService
 from handlers import setup_commands, setup_callbacks, setup_messages
 from utils.logger import log
+from utils.chat_names import chat_name_cache
 
 
 async def main():
     """Основная функция запуска бота"""
-    log("Bot starting")
+    log("Бот запускается")
     
     # Инициализация базы данных
     db = Database(DB_PATH)
@@ -28,17 +29,17 @@ async def main():
     if MODE == "bot":
         client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
         await client.start(bot_token=BOT_TOKEN)
-        log(f"Bot client started")
+        log(f"Клиент бота запущен")
     elif MODE == "user":
         # User mode
         client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
         await client.start()
-        log(f"User client started")
+        log(f"Клиент пользователя запущен")
     else:
         # Auto mode - запускаем оба клиента
         client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
         await client.start(bot_token=BOT_TOKEN)
-        log(f"Bot client started")
+        log(f"Клиент бота запущен")
     
     # Инициализация user клиента для fallback (если нужен)
     user_client = None
@@ -48,10 +49,13 @@ async def main():
             user_api_hash = USER_API_HASH or API_HASH
             user_client = TelegramClient(USER_SESSION_NAME, user_api_id, user_api_hash)
             await user_client.start()
-            log(f"User client started for fallback")
+            log(f"Клиент пользователя запущен для резервного варианта")
         except Exception as e:
-            log(f"Warning: Failed to start user client: {e}. Will continue without fallback.")
+            log(f"Предупреждение: Не удалось запустить клиент пользователя: {e}. Продолжаем без резервного варианта.")
             user_client = None
+    
+    # Инициализация кэша названий каналов
+    chat_name_cache.set_clients(client, user_client)
     
     # Инициализация сервиса пересылки
     forwarder = ForwarderService(client, user_client)
@@ -60,11 +64,11 @@ async def main():
     user_states = {}
     
     # Настройка обработчиков
-    log("Setting up command handlers...")
+    log("Настройка обработчиков команд...")
     setup_commands(client, db, user_states, user_client)
-    log("Setting up callback handlers...")
+    log("Настройка обработчиков callback...")
     setup_callbacks(client, db, user_states)
-    log("Setting up message handlers...")
+    log("Настройка обработчиков сообщений...")
     setup_messages(client, db, forwarder, user_client)
     
     # Устанавливаем команды меню для бота (только для bot режима)
@@ -85,17 +89,17 @@ async def main():
                 lang_code="ru",
                 commands=commands
             ))
-            log("Bot commands menu set successfully")
+            log("Меню команд бота успешно установлено")
         except Exception as e:
-            log(f"Warning: Failed to set bot commands menu: {e}")
+            log(f"Предупреждение: Не удалось установить меню команд бота: {e}")
             import traceback
-            log(f"Traceback: {traceback.format_exc()}")
+            log(f"Трассировка: {traceback.format_exc()}")
     
     # Логируем список источников для отладки
     sources = db.list_sources()
-    log(f"Registered sources: {[(sid, name) for sid, name, _, _ in sources]}")
+    log(f"Зарегистрированные источники: {[(sid, name) for sid, name, _, _ in sources]}")
     
-    log("Handlers registered, bot is ready")
+    log("Обработчики зарегистрированы, бот готов")
     
     # Запуск бота
     try:
@@ -123,7 +127,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        log("Bot stopped")
+        log("Бот остановлен")
     except Exception as e:
-        log(f"Fatal error: {e}")
+        log(f"Критическая ошибка: {e}")
         raise
