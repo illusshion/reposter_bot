@@ -4,12 +4,54 @@ set -e
 
 CURRENT_USER=$(whoami)
 PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
+VENV_DIR="$PROJECT_DIR/venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
 
-if [ ! -f "$VENV_PYTHON" ]; then
-    echo "✗ Ошибка: виртуальное окружение не найдено!"
-    echo "Сначала выполни: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+echo "Настройка бота..."
+echo "   Пользователь: $CURRENT_USER"
+echo "   Директория: $PROJECT_DIR"
+echo ""
+
+# Проверка Python
+if ! command -v python3 &> /dev/null; then
+    echo "✗ Ошибка: Python3 не установлен!"
     exit 1
+fi
+
+# Создание виртуального окружения если его нет
+if [ ! -f "$VENV_PYTHON" ]; then
+    echo "Создание виртуального окружения..."
+    python3 -m venv "$VENV_DIR"
+    echo "✓ Виртуальное окружение создано"
+fi
+
+# Установка зависимостей
+if [ -f "$PROJECT_DIR/requirements.txt" ]; then
+    echo "Установка зависимостей..."
+    "$VENV_DIR/bin/pip" install --upgrade pip -q
+    "$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -q
+    echo "✓ Зависимости установлены"
+else
+    echo "⚠ Предупреждение: файл requirements.txt не найден"
+fi
+
+# Проверка .env файла
+if [ ! -f "$PROJECT_DIR/.env" ]; then
+    if [ -f "$PROJECT_DIR/.env.example" ]; then
+        echo ""
+        echo "⚠ Файл .env не найден!"
+        echo "Создаю .env из примера..."
+        cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
+        echo "✓ Файл .env создан"
+        echo ""
+        echo "⚠ ВАЖНО: Отредактируйте файл .env и заполните необходимые параметры:"
+        echo "   nano $PROJECT_DIR/.env"
+        echo ""
+        read -p "Нажмите Enter после заполнения .env файла..."
+    else
+        echo "✗ Ошибка: файл .env не найден и нет примера .env.example"
+        exit 1
+    fi
 fi
 
 if [ ! -f "$PROJECT_DIR/main.py" ]; then
@@ -56,12 +98,32 @@ sudo systemctl enable reposter-bot
 echo "Запуск бота..."
 sudo systemctl start reposter-bot
 
+# Установка команд управления ботом
+echo "Установка команд управления..."
+BOT_MANAGER="$PROJECT_DIR/bot-manager.sh"
+if [ -f "$BOT_MANAGER" ]; then
+    chmod +x "$BOT_MANAGER"
+    
+    # Создаем симлинки для простых команд
+    sudo ln -sf "$BOT_MANAGER" /usr/local/bin/bot-start
+    sudo ln -sf "$BOT_MANAGER" /usr/local/bin/bot-stop
+    sudo ln -sf "$BOT_MANAGER" /usr/local/bin/bot-restart
+    sudo ln -sf "$BOT_MANAGER" /usr/local/bin/bot-status
+    sudo ln -sf "$BOT_MANAGER" /usr/local/bin/bot-logs
+    
+    echo "✓ Команды управления установлены"
+else
+    echo "⚠ Предупреждение: bot-manager.sh не найден"
+fi
+
 echo ""
 echo "✓ Готово! Бот настроен на автозапуск."
 echo ""
 echo "Полезные команды:"
-echo "  sudo systemctl status reposter-bot  - проверить статус"
-echo "  sudo systemctl restart reposter-bot - перезапустить"
-echo "  sudo systemctl stop reposter-bot    - остановить"
-echo "  tail -f $PROJECT_DIR/bot.log        - посмотреть логи"
+echo "  bot-start    - запустить бота"
+echo "  bot-stop     - остановить бота"
+echo "  bot-restart  - перезапустить бота"
+echo "  bot-status   - проверить статус"
+echo "  bot-logs     - посмотреть логи"
+echo "  bot-logs 100 - показать последние 100 строк логов"
 echo ""
