@@ -205,6 +205,20 @@ def setup_callbacks(client, db: Database, user_states: dict):
             else:
                 await event.answer("Такого склада уже нет.", alert=True)
 
+        # Настройка шага репоста
+        elif data.startswith("set_step_"):
+            try:
+                step = int(data.split("_")[-1])
+                if 1 <= step <= 10:
+                    db.set_repost_step(step)
+                    msg = "Готово. Теперь репощу всё подряд." if step == 1 else f"Готово. Буду репостить каждый {step}-й пост."
+                    await event.answer(msg, alert=False)
+                    await event.edit(msg, parse_mode='html')
+                else:
+                    await event.answer("Шаг должен быть от 1 до 10.", alert=True)
+            except (ValueError, IndexError):
+                await event.answer("Ошибка.", alert=True)
+
         # Закрытие сообщения
         elif data == "close_msg":
             try:

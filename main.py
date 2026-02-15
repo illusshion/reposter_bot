@@ -58,7 +58,7 @@ async def main():
     chat_name_cache.set_clients(client, user_client)
     
     # Инициализация сервиса пересылки
-    forwarder = ForwarderService(client, user_client)
+    forwarder = ForwarderService(client, user_client, get_repost_step=db.get_repost_step)
     
     # Состояния пользователей (для интерактивных команд)
     user_states = {}
@@ -83,6 +83,7 @@ async def main():
                 BotCommand(command="bind", description="Создать связку"),
                 BotCommand(command="list", description="Список связок"),
                 BotCommand(command="remove", description="Удалить связку"),
+                BotCommand(command="settings", description="Настройки (шаг репоста)"),
             ]
             await client(SetBotCommandsRequest(
                 scope=BotCommandScopeDefault(),

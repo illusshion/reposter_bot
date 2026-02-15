@@ -94,6 +94,12 @@ def init_db(db_path: str) -> None:
                 FOREIGN KEY(target_id) REFERENCES targets(id) ON DELETE CASCADE
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         conn.commit()
     # Применяем миграции для существующих БД
     with sqlite3.connect(db_path) as conn:

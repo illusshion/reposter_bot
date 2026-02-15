@@ -7,6 +7,11 @@ from typing import List, Tuple, Optional
 from .models import init_db
 from utils.channel_id import normalize_channel_id
 
+try:
+    from config import REPOST_STEP as DEFAULT_REPOST_STEP
+except ImportError:
+    DEFAULT_REPOST_STEP = 1
+
 
 class Database:
     def __init__(self, db_path: str):
@@ -154,6 +159,27 @@ class Database:
             deleted_src = cur.rowcount
             conn.commit()
             return binds, deleted_src, name
+
+    def get_repost_step(self) -> int:
+        """Возвращает шаг репоста (1=все, 2=каждый второй и т.д.)."""
+        with sqlite3.connect(self.db_path) as conn:
+            try:
+                row = conn.execute("SELECT value FROM settings WHERE key = ?", ("repost_step",)).fetchone()
+                if row:
+                    return max(1, int(row[0]))
+            except sqlite3.OperationalError:
+                pass
+        return max(1, DEFAULT_REPOST_STEP or 1)
+
+    def set_repost_step(self, step: int) -> None:
+        """Устанавливает шаг репоста."""
+        step = max(1, int(step))
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                ("repost_step", str(step))
+            )
+            conn.commit()
 
     def remove_target(self, target_id: int) -> Tuple[int, int, str]:
         with sqlite3.connect(self.db_path) as conn:

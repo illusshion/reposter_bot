@@ -94,6 +94,9 @@ DB_PATH = env_str("DB_PATH", "forwarder.db")
 LOG_FILE = env_str("LOG_FILE", "bot.log")
 MAX_LOG_SIZE_MB = env_int("MAX_LOG_SIZE_MB", 10) or 10
 ALBUM_IDLE_SEC = env_float("ALBUM_IDLE_SEC", 4.5)
+REPOST_STEP = env_int("REPOST_STEP", 1) or 1
+if REPOST_STEP < 1:
+    REPOST_STEP = 1
 
 # Подсказка для пользователей
 COPY_HINT = (

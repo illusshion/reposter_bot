@@ -3,7 +3,7 @@
 Сервис пересылки сообщений с поддержкой альбомов
 """
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 from collections import defaultdict
 from telethon import TelegramClient
 from telethon.tl.types import Message
@@ -41,14 +41,18 @@ def is_permission_error(error: Exception) -> bool:
 class ForwarderService:
     """Сервис для пересылки сообщений с обработкой альбомов"""
 
-    def __init__(self, client: TelegramClient, user_client: Optional[TelegramClient] = None):
+    def __init__(self, client: TelegramClient, user_client: Optional[TelegramClient] = None,
+                 get_repost_step: Optional[Callable[[], int]] = None):
         self.client = client
         self.user_client = user_client
+        self.get_repost_step = get_repost_step or (lambda: 1)
         self.album_buffer: Dict[str, List[Message]] = {}
         self.album_tasks: Dict[str, asyncio.Task] = {}
-        self.failed_targets: Dict[int, bool] = {}  # Кэш целей, где нужен user bot
-        self.processed_messages: set = set()  # Кэш обработанных сообщений для дедупликации
-        self.processing_albums: set = set()  # Альбомы, которые сейчас обрабатываются
+        self.failed_targets: Dict[int, bool] = {}
+        self.processed_messages: set = set()
+        self.processing_albums: set = set()
+        self.source_counters: Dict[int, int] = {}  # счётчик постов по источникам
+        self.skipped_albums: set = set()  # альбомы, пропущенные по шагу
 
     async def flush_album(self, key: str, from_peer, targets: List[int]):
         """Пересылает накопленные сообщения альбома после задержки"""
@@ -159,7 +163,9 @@ class ForwarderService:
         if not chat_id:
             log(f"ОШИБКА: Не удалось извлечь chat_id из сообщения {message.id}")
             return
-        
+
+        step = self.get_repost_step()
+
         # Обработка альбомов
         if message.grouped_id:
             key = f"{chat_id}_{message.grouped_id}"
@@ -167,8 +173,10 @@ class ForwarderService:
             # Проверяем дедупликацию: если альбом уже полностью переслан, пропускаем
             album_key = (chat_id, message.grouped_id)
             if album_key in self.processed_messages:
-                return  # Альбом уже переслан, пропускаем
-            
+                return
+            if album_key in self.skipped_albums:
+                return
+
             # Проверяем, не обрабатывается ли уже этот альбом
             if key in self.processing_albums:
                 # Альбом обрабатывается, просто добавляем сообщение в буфер
@@ -176,6 +184,16 @@ class ForwarderService:
                 bucket.append(message)
                 return
             
+            # Первое сообщение альбома — проверяем шаг
+            if key not in self.album_buffer:
+                self.source_counters[chat_id] = self.source_counters.get(chat_id, 0) + 1
+                counter = self.source_counters[chat_id]
+                if step > 1 and counter % step != 0:
+                    self.skipped_albums.add(album_key)
+                    if len(self.skipped_albums) > 5000:
+                        self.skipped_albums = set(list(self.skipped_albums)[2500:])
+                    return
+
             # Добавляем сообщение в буфер альбома
             bucket = self.album_buffer.setdefault(key, [])
             bucket.append(message)
@@ -194,13 +212,17 @@ class ForwarderService:
             )
             return
         
-        # Дедупликация для обычных сообщений: проверяем, не обрабатывали ли мы уже это сообщение
+        # Дедупликация — сразу помечаем, чтобы не считать дважды (bot+user клиенты)
         message_key = (chat_id, message.id)
         if message_key in self.processed_messages:
-            return  # Сообщение уже обработано, пропускаем
-        
-        # Добавляем в кэш обработанных сообщений
+            return
         self.processed_messages.add(message_key)
+
+        # Проверка шага репоста
+        self.source_counters[chat_id] = self.source_counters.get(chat_id, 0) + 1
+        counter = self.source_counters[chat_id]
+        if step > 1 and counter % step != 0:
+            return
         
         # Ограничиваем размер кэша (храним последние 10000 записей)
         if len(self.processed_messages) > 10000:

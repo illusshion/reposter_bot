@@ -18,6 +18,12 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
     async def cmd_start(event):
         if event.sender_id not in OWNER_IDS:
             return
+        menu_keyboard = [
+            [Button.text("Добавить источник", resize=True), Button.text("Добавить склад", resize=True)],
+            [Button.text("Все источники", resize=True), Button.text("Все склады", resize=True)],
+            [Button.text("Создать связку", resize=True), Button.text("Список связок", resize=True)],
+            [Button.text("Настройки", resize=True)],
+        ]
         await event.respond(
             "Бот-репостер готов.\n\nКоманды:\n"
             "/add_source — добавить канал-источник\n"
@@ -27,7 +33,9 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
             "/bind — создать связку\n"
             "/list — список связок\n"
             "/remove — удалить связку\n"
-            "/help — помощь"
+            "/settings — настройки (шаг репоста)\n"
+            "/help — помощь",
+            buttons=menu_keyboard
         )
 
     @client.on(events.NewMessage(pattern=r'^/help', func=lambda e: e.is_private))
@@ -43,7 +51,28 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
             "/bind — создать связку\n"
             "/list — список связок\n"
             "/remove — удалить связку\n"
+            "/settings — настройки (шаг репоста)\n"
             "/help — помощь"
+        )
+
+    @client.on(events.NewMessage(pattern=r'^/settings', func=lambda e: e.is_private))
+    async def cmd_settings(event):
+        if event.sender_id not in OWNER_IDS:
+            return
+        step = db.get_repost_step()
+        buttons = [
+            [Button.inline("Шаг 1 (все посты)", b"set_step_1")],
+            [Button.inline("Шаг 2 (каждый 2-й)", b"set_step_2")],
+            [Button.inline("Шаг 3 (каждый 3-й)", b"set_step_3")],
+            [Button.inline("Шаг 4 (каждый 4-й)", b"set_step_4")],
+        ]
+        step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
+        await event.respond(
+            f"<b>Шаг репостов</b>\n\n"
+            f"Сейчас: бот репостит <b>{step_desc}</b>.\n\n"
+            f"Выбери шаг:",
+            parse_mode='html',
+            buttons=buttons
         )
 
     @client.on(events.NewMessage(pattern=r'^/add_source', func=lambda e: e.is_private))
@@ -159,18 +188,92 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
         else:
             await event.respond("Эта команда доступна только при добавлении канала.")
 
-    # Обработка добавления источников/складов
+    # Обработка добавления источников/складов и кнопок reply-меню
     @client.on(events.NewMessage(func=lambda e: e.is_private and not (e.message.text and e.message.text.startswith('/'))))
     async def private_steps(event):
         if event.sender_id not in OWNER_IDS:
             return
+        text = (event.message.text or "").strip()
+
+        # Кнопки reply-меню (проверяем до state — работают всегда)
+        if text == "Настройки":
+            step = db.get_repost_step()
+            buttons = [
+                [Button.inline("Шаг 1 (все посты)", b"set_step_1")],
+                [Button.inline("Шаг 2 (каждый 2-й)", b"set_step_2")],
+                [Button.inline("Шаг 3 (каждый 3-й)", b"set_step_3")],
+                [Button.inline("Шаг 4 (каждый 4-й)", b"set_step_4")],
+            ]
+            step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
+            await event.respond(
+                f"<b>Шаг репостов</b>\n\n"
+                f"Сейчас: бот репостит <b>{step_desc}</b>.\n\n"
+                f"Выбери шаг:",
+                parse_mode='html',
+                buttons=buttons
+            )
+            return
+        if text == "Все источники":
+            text_out, btns = render_sources_view(db)
+            await event.respond(text_out, buttons=btns, parse_mode='html', link_preview=False)
+            return
+        if text == "Все склады":
+            text_out, btns = render_targets_view(db)
+            await event.respond(text_out, buttons=btns, parse_mode='html', link_preview=False)
+            return
+        if text == "Список связок":
+            binds = db.get_bindings()
+            if not binds:
+                await event.respond("Связок нет.")
+            else:
+                src_rows = {sid: (name, username, invite_link) for sid, name, username, invite_link in db.list_sources()}
+                tgt_rows = {tid: (name, username, invite_link) for tid, name, username, invite_link in db.list_targets()}
+                groups = {}
+                for src_id, tgt_id in binds:
+                    if tgt_id not in groups:
+                        groups[tgt_id] = []
+                    groups[tgt_id].append(src_id)
+                lines = []
+                for tgt_id, src_ids in sorted(groups.items(), key=lambda x: tgt_rows.get(x[0], (str(x[0]), None, None))[0]):
+                    t_name, t_user, t_inv = tgt_rows.get(tgt_id, (str(tgt_id), None, None))
+                    tgt_link = make_channel_link(t_name, tgt_id, t_user, t_inv)
+                    src_link_strs = []
+                    for sid in sorted(src_ids, key=lambda x: src_rows.get(x, (str(x), None, None))[0]):
+                        s_name, s_user, s_inv = src_rows.get(sid, (str(sid), None, None))
+                        src_link_strs.append(make_channel_link(s_name, sid, s_user, s_inv))
+                    lines.append(f"{tgt_link} ← {' + '.join(src_link_strs)}")
+                await event.respond("\n".join(lines), parse_mode='html')
+            return
+        if text == "Добавить источник":
+            user_states[event.sender_id] = {"step": "add_source"}
+            await event.respond("Перешли сообщение из канала-источника.", buttons=[[Button.text("✕ Отмена", resize=True, single_use=True)]])
+            return
+        if text == "Добавить склад":
+            user_states[event.sender_id] = {"step": "add_target"}
+            await event.respond("Перешли сообщение из канала-склада.", buttons=[[Button.text("✕ Отмена", resize=True, single_use=True)]])
+            return
+        if text == "Создать связку":
+            sources = db.list_sources()
+            targets = db.list_targets()
+            if not sources or not targets:
+                await event.respond("Нет источников или складов. Сначала добавь их.")
+                return
+            buttons = [Button.inline(f"▫ {tname}", f"bind_tgt_{tid}".encode()) for tid, tname, _, _ in targets]
+            rows = chunk_buttons(buttons, per_row=2)
+            rows.append([
+                Button.inline("✓ Далее", b"bind_next_to_sources"),
+                Button.inline("✕ Отмена", b"bind_cancel"),
+            ])
+            user_states[event.sender_id] = {"step": "bind_choose_tgts", "selected_tgts": set(), "selected_srcs": set()}
+            await event.respond("Выбери склады для связки (можно несколько):", buttons=rows)
+            return
+
         state = user_states.get(event.sender_id)
         if not state:
             return
         step = state.get("step")
         
         # Обработка отмены через кнопку
-        text = (event.message.text or "").strip()
         if text == "✕ Отмена" or text.lower() == "отмена":
             user_states.pop(event.sender_id, None)
             # Убираем клавиатуру
