@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import List, Optional
+from typing import List, Optional, Tuple, Union
 from telethon.tl.types import Channel, Chat
 from telethon.utils import get_display_name
 from telethon import Button
@@ -14,7 +14,7 @@ def make_channel_link(name: str, chat_id: int, username: Optional[str] = None, i
     return name
 
 
-def render_sources_view(db) -> tuple[str, List]:
+def render_sources_view(db) -> Tuple[str, List]:
     """Формирует текст и кнопки для списка источников"""
     items = db.list_sources()
     if not items:
@@ -30,7 +30,7 @@ def render_sources_view(db) -> tuple[str, List]:
     return "\n".join(lines), buttons
 
 
-def render_targets_view(db) -> tuple[str, List]:
+def render_targets_view(db) -> Tuple[str, List]:
     """Формирует текст и кнопки для списка складов"""
     items = db.list_targets()
     if not items:
@@ -53,6 +53,6 @@ def chunk_buttons(buttons: list, per_row: int = 2) -> List[List]:
     return [buttons[i:i+per_row] for i in range(0, len(buttons), per_row)]
 
 
-def get_chat_name(chat: Channel | Chat) -> str:
+def get_chat_name(chat: Union[Channel, Chat]) -> str:
     """Получает название чата"""
     return getattr(chat, "title", None) or get_display_name(chat) or str(chat.id)
