@@ -3,9 +3,10 @@
 Обработчики callback кнопок
 """
 from telethon import events, Button
+from telethon.errors import MessageNotModifiedError
 from config import OWNER_IDS
 from database import Database
-from utils.formatters import render_sources_view, render_targets_view, chunk_buttons, make_channel_link
+from utils.formatters import render_sources_view, render_targets_view, render_settings_main, chunk_buttons, make_channel_link
 from utils.channel_id import normalize_channel_id
 
 
@@ -205,17 +206,87 @@ def setup_callbacks(client, db: Database, user_states: dict):
             else:
                 await event.answer("Такого склада уже нет.", alert=True)
 
-        # Настройка шага репоста
-        elif data.startswith("set_step_"):
+        # === Настройки шага репостов ===
+
+        # Главное меню настроек (возврат)
+        elif data == "settings_back":
+            text, btns = render_settings_main(db)
+            try:
+                await event.edit(text, parse_mode='html', buttons=btns)
+            except MessageNotModifiedError:
+                await event.answer()
+
+        # Открыть настройку шага для конкретного склада
+        elif data.startswith("tgt_step_"):
+            try:
+                tid = int(data.split("_")[-1])
+                tgt_rows = {_tid: (name, u, i) for _tid, name, u, i in db.list_targets()}
+                tname = tgt_rows.get(tid, (str(tid), None, None))[0]
+                step = db.get_repost_step(tid)
+                step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
+                lines = [f"<b>Шаг для «{tname}»</b>\n\n", f"Сейчас: <b>{step_desc}</b>\n\n", "Выбери шаг:"]
+                btns = [
+                    [Button.inline("1 — всё подряд", f"set_tgt_step_{tid}_1".encode()),
+                     Button.inline("2 — каждый 2-й", f"set_tgt_step_{tid}_2".encode())],
+                    [Button.inline("3 — каждый 3-й", f"set_tgt_step_{tid}_3".encode()),
+                     Button.inline("4 — каждый 4-й", f"set_tgt_step_{tid}_4".encode())],
+                    [Button.inline("← Назад", b"settings_back")],
+                ]
+                try:
+                    await event.edit("\n".join(lines), parse_mode='html', buttons=btns)
+                except MessageNotModifiedError:
+                    await event.answer()
+            except (ValueError, IndexError):
+                await event.answer("Ошибка.", alert=True)
+
+        # Глобальный шаг по умолчанию
+        elif data.startswith("set_step_") and not data.startswith("set_tgt_step_"):
             try:
                 step = int(data.split("_")[-1])
                 if 1 <= step <= 10:
                     db.set_repost_step(step)
-                    msg = "Готово. Теперь репощу всё подряд." if step == 1 else f"Готово. Буду репостить каждый {step}-й пост."
+                    msg = "Готово. Новые склады будут репостить всё подряд." if step == 1 else f"Готово. Новые склады будут репостить каждый {step}-й пост."
                     await event.answer(msg, alert=False)
-                    await event.edit(msg, parse_mode='html')
+                    text, btns = render_settings_main(db)
+                    try:
+                        await event.edit(text, parse_mode='html', buttons=btns)
+                    except MessageNotModifiedError:
+                        pass
                 else:
                     await event.answer("Шаг должен быть от 1 до 10.", alert=True)
+            except (ValueError, IndexError):
+                await event.answer("Ошибка.", alert=True)
+
+        # Настройка шага репоста для склада
+        elif data.startswith("set_tgt_step_"):
+            parts = data.split("_")
+            try:
+                if len(parts) >= 5:
+                    tid = int(parts[3])
+                    step = int(parts[4])
+                    if 1 <= step <= 10:
+                        db.set_repost_step(step, target_id=tid)
+                        tgt_rows = {_tid: (name, u, i) for _tid, name, u, i in db.list_targets()}
+                        tname = tgt_rows.get(tid, (str(tid), None, None))[0]
+                        msg = f"✓ «{tname}»: {'всё подряд' if step == 1 else f'каждый {step}-й пост'}"
+                        await event.answer(msg, alert=False)
+                        step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
+                        lines = [f"<b>Шаг для «{tname}»</b>\n\n", f"Сейчас: <b>{step_desc}</b>\n\n", "Выбери шаг:"]
+                        btns = [
+                            [Button.inline("1 — всё подряд", f"set_tgt_step_{tid}_1".encode()),
+                             Button.inline("2 — каждый 2-й", f"set_tgt_step_{tid}_2".encode())],
+                            [Button.inline("3 — каждый 3-й", f"set_tgt_step_{tid}_3".encode()),
+                             Button.inline("4 — каждый 4-й", f"set_tgt_step_{tid}_4".encode())],
+                            [Button.inline("← Назад", b"settings_back")],
+                        ]
+                        try:
+                            await event.edit("\n".join(lines), parse_mode='html', buttons=btns)
+                        except MessageNotModifiedError:
+                            pass
+                    else:
+                        await event.answer("Шаг должен быть от 1 до 10.", alert=True)
+                else:
+                    await event.answer("Ошибка.", alert=True)
             except (ValueError, IndexError):
                 await event.answer("Ошибка.", alert=True)
 

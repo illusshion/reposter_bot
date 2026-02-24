@@ -46,6 +46,27 @@ def render_targets_view(db) -> Tuple[str, List]:
     return "\n".join(lines), buttons
 
 
+def render_settings_main(db) -> Tuple[str, List]:
+    """Формирует текст и кнопки для главного экрана настроек шага репостов"""
+    default_step = db.get_repost_step()
+    default_desc = "все посты" if default_step == 1 else f"каждый {default_step}-й пост"
+    lines = [f"<b>Шаг репостов</b>\n", f"По умолчанию: <b>{default_desc}</b>\n"]
+    btns = [[Button.inline("По умолч. 1", b"set_step_1"), Button.inline("2", b"set_step_2"),
+            Button.inline("3", b"set_step_3"), Button.inline("4", b"set_step_4")]]
+    targets = db.list_targets()
+    if targets:
+        lines.append("Выбери склад:")
+        for tid, tname, tuser, tinv in targets:
+            s = db.get_repost_step(tid)
+            sd = "все" if s == 1 else f"каждый {s}-й"
+            lines.append(f"• {make_channel_link(tname, tid, tuser, tinv)} — {sd}")
+            btns.append([Button.inline(f"⚙️ {tname[:20]}", f"tgt_step_{tid}".encode())])
+    else:
+        lines.append("(нет складов)")
+    btns.append([Button.inline("Закрыть", b"close_msg")])
+    return "\n".join(lines), btns
+
+
 def chunk_buttons(buttons: list, per_row: int = 2) -> List[List]:
     """Разбивает кнопки на строки"""
     if per_row < 1:

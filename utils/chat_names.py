@@ -20,6 +20,10 @@ class ChatNameCache:
         """Устанавливает клиенты для получения информации о чатах"""
         self._client = client
         self._user_client = user_client
+
+    def set_user_client(self, user_client: Optional[TelegramClient]):
+        """Обновляет только user client (для переподключения)"""
+        self._user_client = user_client
     
     def get_chat_name(self, chat) -> str:
         """Получает название чата из объекта"""

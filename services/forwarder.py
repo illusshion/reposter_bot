@@ -42,10 +42,10 @@ class ForwarderService:
     """Сервис для пересылки сообщений с обработкой альбомов"""
 
     def __init__(self, client: TelegramClient, user_client: Optional[TelegramClient] = None,
-                 get_repost_step: Optional[Callable[[], int]] = None):
+                 get_repost_step: Optional[Callable[[int], int]] = None):
         self.client = client
         self.user_client = user_client
-        self.get_repost_step = get_repost_step or (lambda: 1)
+        self.get_repost_step = get_repost_step or (lambda tid: 1)
         self.album_buffer: Dict[str, List[Message]] = {}
         self.album_tasks: Dict[str, asyncio.Task] = {}
         self.failed_targets: Dict[int, bool] = {}
@@ -53,6 +53,10 @@ class ForwarderService:
         self.processing_albums: set = set()
         self.source_counters: Dict[int, int] = {}  # счётчик постов по источникам
         self.skipped_albums: set = set()  # альбомы, пропущенные по шагу
+
+    def set_user_client(self, user_client: Optional[TelegramClient]):
+        """Обновляет user client (для переподключения)"""
+        self.user_client = user_client
 
     async def flush_album(self, key: str, from_peer, targets: List[int]):
         """Пересылает накопленные сообщения альбома после задержки"""
@@ -164,8 +168,6 @@ class ForwarderService:
             log(f"ОШИБКА: Не удалось извлечь chat_id из сообщения {message.id}")
             return
 
-        step = self.get_repost_step()
-
         # Обработка альбомов
         if message.grouped_id:
             key = f"{chat_id}_{message.grouped_id}"
@@ -184,15 +186,22 @@ class ForwarderService:
                 bucket.append(message)
                 return
             
-            # Первое сообщение альбома — проверяем шаг
+            # Первое сообщение альбома — проверяем шаг для каждого склада
             if key not in self.album_buffer:
-                self.source_counters[chat_id] = self.source_counters.get(chat_id, 0) + 1
-                counter = self.source_counters[chat_id]
-                if step > 1 and counter % step != 0:
+                targets_to_forward = []
+                for tgt in targets:
+                    st_key = (chat_id, tgt)
+                    self.source_target_counters[st_key] = self.source_target_counters.get(st_key, 0) + 1
+                    counter = self.source_target_counters[st_key]
+                    step = self.get_repost_step(tgt)
+                    if step <= 1 or counter % step == 0:
+                        targets_to_forward.append(tgt)
+                if not targets_to_forward:
                     self.skipped_albums.add(album_key)
                     if len(self.skipped_albums) > 5000:
                         self.skipped_albums = set(list(self.skipped_albums)[2500:])
                     return
+                targets = targets_to_forward
 
             # Добавляем сообщение в буфер альбома
             bucket = self.album_buffer.setdefault(key, [])
@@ -206,7 +215,7 @@ class ForwarderService:
                 except Exception:
                     pass
             
-            # Создаем новую задачу с задержкой
+            # Создаем новую задачу с задержкой (targets уже отфильтрованы при первом сообщении)
             self.album_tasks[key] = asyncio.create_task(
                 self.flush_album(key, message.peer_id, targets)
             )
@@ -218,10 +227,17 @@ class ForwarderService:
             return
         self.processed_messages.add(message_key)
 
-        # Проверка шага репоста
-        self.source_counters[chat_id] = self.source_counters.get(chat_id, 0) + 1
-        counter = self.source_counters[chat_id]
-        if step > 1 and counter % step != 0:
+        # Проверка шага репоста — фильтруем склады
+        targets_to_forward = []
+        for tgt in targets:
+            st_key = (chat_id, tgt)
+            self.source_target_counters[st_key] = self.source_target_counters.get(st_key, 0) + 1
+            counter = self.source_target_counters[st_key]
+            step = self.get_repost_step(tgt)
+            if step <= 1 or counter % step == 0:
+                targets_to_forward.append(tgt)
+        targets = targets_to_forward
+        if not targets:
             return
         
         # Ограничиваем размер кэша (храним последние 10000 записей)

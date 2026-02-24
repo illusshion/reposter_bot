@@ -6,7 +6,7 @@ from telethon import events, Button
 from telethon.tl.types import Channel, Chat
 from config import OWNER_IDS, COPY_HINT
 from database import Database
-from utils.formatters import get_chat_name, make_channel_link, render_sources_view, render_targets_view, chunk_buttons
+from utils.formatters import get_chat_name, make_channel_link, render_sources_view, render_targets_view, render_settings_main, chunk_buttons
 from utils.validators import is_invite_link
 from utils.channel_id import normalize_channel_id
 
@@ -59,21 +59,8 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
     async def cmd_settings(event):
         if event.sender_id not in OWNER_IDS:
             return
-        step = db.get_repost_step()
-        buttons = [
-            [Button.inline("Шаг 1 (все посты)", b"set_step_1")],
-            [Button.inline("Шаг 2 (каждый 2-й)", b"set_step_2")],
-            [Button.inline("Шаг 3 (каждый 3-й)", b"set_step_3")],
-            [Button.inline("Шаг 4 (каждый 4-й)", b"set_step_4")],
-        ]
-        step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
-        await event.respond(
-            f"<b>Шаг репостов</b>\n\n"
-            f"Сейчас: бот репостит <b>{step_desc}</b>.\n\n"
-            f"Выбери шаг:",
-            parse_mode='html',
-            buttons=buttons
-        )
+        text, buttons = render_settings_main(db)
+        await event.respond(text, parse_mode='html', buttons=buttons)
 
     @client.on(events.NewMessage(pattern=r'^/add_source', func=lambda e: e.is_private))
     async def cmd_add_source(event):
@@ -197,21 +184,8 @@ def setup_commands(client, db: Database, user_states: dict, user_client=None):
 
         # Кнопки reply-меню (проверяем до state — работают всегда)
         if text == "Настройки":
-            step = db.get_repost_step()
-            buttons = [
-                [Button.inline("Шаг 1 (все посты)", b"set_step_1")],
-                [Button.inline("Шаг 2 (каждый 2-й)", b"set_step_2")],
-                [Button.inline("Шаг 3 (каждый 3-й)", b"set_step_3")],
-                [Button.inline("Шаг 4 (каждый 4-й)", b"set_step_4")],
-            ]
-            step_desc = "все посты" if step == 1 else f"каждый {step}-й пост"
-            await event.respond(
-                f"<b>Шаг репостов</b>\n\n"
-                f"Сейчас: бот репостит <b>{step_desc}</b>.\n\n"
-                f"Выбери шаг:",
-                parse_mode='html',
-                buttons=buttons
-            )
+            text_out, buttons = render_settings_main(db)
+            await event.respond(text_out, parse_mode='html', buttons=buttons)
             return
         if text == "Все источники":
             text_out, btns = render_sources_view(db)

@@ -82,10 +82,14 @@ def setup_messages(client, db: Database, forwarder: ForwarderService, user_clien
     async def on_channel_post_bot(event):
         await handle_channel_message(event, "bot")
     
-    # Настраиваем обработчик на user клиент (если доступен)
-    if user_client:
-        @user_client.on(events.NewMessage(chats=None))
+    def register_user_client_handler(uc):
+        """Регистрирует обработчик на user client (для переподключения)"""
+        @uc.on(events.NewMessage(chats=None))
         async def on_channel_post_user(event):
             await handle_channel_message(event, "user")
-    
+
+    if user_client:
+        register_user_client_handler(user_client)
+
     log("Обработчики сообщений успешно зарегистрированы")
+    return register_user_client_handler

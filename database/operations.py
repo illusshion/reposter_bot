@@ -160,10 +160,17 @@ class Database:
             conn.commit()
             return binds, deleted_src, name
 
-    def get_repost_step(self) -> int:
-        """Возвращает шаг репоста (1=все, 2=каждый второй и т.д.)."""
+    def get_repost_step(self, target_id: Optional[int] = None) -> int:
+        """Шаг репоста: для target_id (склада) или глобальный. 1=все, 2=каждый второй и т.д."""
         with sqlite3.connect(self.db_path) as conn:
             try:
+                if target_id is not None:
+                    row = conn.execute(
+                        "SELECT value FROM settings WHERE key = ?",
+                        (f"target_step_{target_id}",)
+                    ).fetchone()
+                    if row:
+                        return max(1, int(row[0]))
                 row = conn.execute("SELECT value FROM settings WHERE key = ?", ("repost_step",)).fetchone()
                 if row:
                     return max(1, int(row[0]))
@@ -171,13 +178,14 @@ class Database:
                 pass
         return max(1, DEFAULT_REPOST_STEP or 1)
 
-    def set_repost_step(self, step: int) -> None:
-        """Устанавливает шаг репоста."""
+    def set_repost_step(self, step: int, target_id: Optional[int] = None) -> None:
+        """Устанавливает шаг: глобально или для конкретного склада."""
         step = max(1, int(step))
         with sqlite3.connect(self.db_path) as conn:
+            key = f"target_step_{target_id}" if target_id is not None else "repost_step"
             conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                ("repost_step", str(step))
+                (key, str(step))
             )
             conn.commit()
 
@@ -189,6 +197,7 @@ class Database:
             binds = cur.execute("SELECT COUNT(*) FROM bindings WHERE target_id=?", (target_id,)).fetchone()[0]
             cur.execute("DELETE FROM bindings WHERE target_id=?", (target_id,))
             cur.execute("DELETE FROM targets WHERE id=?", (target_id,))
+            cur.execute("DELETE FROM settings WHERE key=?", (f"target_step_{target_id}",))
             deleted_tgt = cur.rowcount
             conn.commit()
             return binds, deleted_tgt, name
